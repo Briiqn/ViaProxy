@@ -35,8 +35,14 @@ import net.lenni0451.reflect.Agents;
 import net.lenni0451.reflect.ClassLoaders;
 import net.lenni0451.reflect.JavaBypass;
 import net.lenni0451.reflect.Methods;
+import net.raphimc.minecraftauth.MinecraftAuth;
+import net.raphimc.minecraftauth.bedrock.BedrockAuthManager;
+import net.raphimc.minecraftauth.msa.model.MsaDeviceCode;
+import net.raphimc.minecraftauth.msa.service.impl.DeviceCodeMsaAuthService;
 import net.raphimc.netminecraft.constants.MCPipeline;
 import net.raphimc.netminecraft.netty.connection.NetServer;
+import net.raphimc.viabedrock.api.BedrockProtocolVersion;
+import net.raphimc.viabedrock.protocol.data.ProtocolConstants;
 import net.raphimc.viaproxy.cli.ConsoleHandler;
 import net.raphimc.viaproxy.plugins.PluginManager;
 import net.raphimc.viaproxy.plugins.events.Client2ProxyHandlerCreationEvent;
@@ -49,21 +55,19 @@ import net.raphimc.viaproxy.proxy.client2proxy.Client2ProxyChannelInitializer;
 import net.raphimc.viaproxy.proxy.client2proxy.Client2ProxyHandler;
 import net.raphimc.viaproxy.proxy.session.ProxyConnection;
 import net.raphimc.viaproxy.saves.SaveManager;
+import net.raphimc.viaproxy.saves.impl.accounts.BedrockAccount;
 import net.raphimc.viaproxy.tasks.SystemRequirementsCheck;
 import net.raphimc.viaproxy.tasks.UpdateCheckTask;
-import net.raphimc.viaproxy.ui.SplashScreen;
-import net.raphimc.viaproxy.ui.ViaProxyWindow;
 import net.raphimc.viaproxy.util.AddressUtil;
 import net.raphimc.viaproxy.util.ClassLoaderPriorityUtil;
 import net.raphimc.viaproxy.util.JarUtil;
 import net.raphimc.viaproxy.util.logging.Logger;
 
-import javax.swing.*;
-import java.awt.*;
 import java.io.File;
 import java.io.IOException;
 import java.lang.instrument.Instrumentation;
 import java.lang.reflect.InvocationTargetException;
+import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -85,8 +89,6 @@ public class ViaProxy {
 
     private static Instrumentation instrumentation;
     private static NetServer currentProxyServer;
-    private static ViaProxyWindow viaProxyWindow;
-    private static JFrame foregroundWindow;
 
     public static void agentmain(final String args, final Instrumentation instrumentation) {
         ViaProxy.instrumentation = instrumentation;
@@ -115,10 +117,6 @@ public class ViaProxy {
     }
 
     public static void injectedMain(final String injectionMethod, final String[] args) throws InterruptedException, IOException, InvocationTargetException {
-        final boolean useUI = args.length == 0 && !GraphicsEnvironment.isHeadless();
-        final boolean useConfig = args.length == 2 && args[0].equals("config");
-        final boolean useCLI = args.length > 0 && args[0].equals("cli");
-
         final List<File> potentialCwds = new ArrayList<>();
         if (System.getenv("VP_RUN_DIR") != null) {
             potentialCwds.add(new File(System.getenv("VP_RUN_DIR")));
@@ -137,7 +135,7 @@ public class ViaProxy {
             }
             failedCwds.add(potentialCwd);
         }
-        if (CWD == null) { // Backup strategy for weird permission setups: Attempt to write a dummy file to check if the directory is writable
+        if (CWD == null) {
             for (File potentialCwd : potentialCwds) {
                 if (potentialCwd.isDirectory()) {
                     try {
@@ -154,9 +152,6 @@ public class ViaProxy {
         }
         if (CWD != null) {
             System.setProperty("user.dir", CWD.getAbsolutePath());
-        } else if (useUI) {
-            JOptionPane.showMessageDialog(null, "Could not find a suitable directory to use as working directory. Make sure that the current folder is writeable.", "ViaProxy", JOptionPane.ERROR_MESSAGE);
-            System.exit(1);
         } else {
             System.err.println("Could not find a suitable directory to use as working directory. Make sure that the current folder is writeable.");
             System.err.println("Attempted to use the following directories:");
@@ -167,15 +162,7 @@ public class ViaProxy {
         }
 
         Logger.setup();
-        if (!useUI && !useConfig && !useCLI) {
-            final String fileName = JarUtil.getJarFile().map(File::getName).orElse("ViaProxy.jar");
-            Logger.LOGGER.info("Usage: java -jar " + fileName + " | Starts ViaProxy in graphical mode if available");
-            Logger.LOGGER.info("Usage: java -jar " + fileName + " config <config file> | Starts ViaProxy with the specified config file");
-            Logger.LOGGER.info("Usage: java -jar " + fileName + " cli --help | Starts ViaProxy in CLI mode");
-            System.exit(1);
-        }
-
-        Logger.LOGGER.info("Initializing ViaProxy {} v{} ({}) (Injected using {})...", useUI ? "GUI" : "CLI", VERSION, IMPL_VERSION, injectionMethod);
+        Logger.LOGGER.info("Initializing ViaProxy CLI v{} ({}) (Injected using {})...", VERSION, IMPL_VERSION, injectionMethod);
         Logger.LOGGER.info("Using java version: " + System.getProperty("java.vm.name") + " " + System.getProperty("java.version") + " (" + System.getProperty("java.vendor") + ") on " + System.getProperty("os.name"));
         Logger.LOGGER.info("Available memory (bytes): " + Runtime.getRuntime().maxMemory());
         Logger.LOGGER.info("Working directory: " + CWD.getAbsolutePath());
@@ -186,42 +173,19 @@ public class ViaProxy {
             }
         }
         if (System.getProperty("ignoreSystemRequirements") == null) {
-            SystemRequirementsCheck.run(useUI);
+            SystemRequirementsCheck.run(false);
         }
-
-        final SplashScreen splashScreen;
-        final Consumer<String> progressConsumer;
-        if (useUI) {
-            final float progressStep = 1F / 7F;
-            foregroundWindow = splashScreen = new SplashScreen();
-            progressConsumer = (text) -> {
-                splashScreen.setProgress(splashScreen.getProgress() + progressStep);
-                splashScreen.setText(text);
-            };
-            Thread.setDefaultUncaughtExceptionHandler((t, e) -> {
-                ViaProxyWindow.showException(e);
-                System.exit(1);
-            });
-        } else {
-            splashScreen = null;
-            progressConsumer = text -> {
-            };
-        }
-        progressConsumer.accept("Initializing ViaProxy");
 
         ConsoleHandler.hookConsole();
         ViaProxy.loadNetty();
         ClassLoaderPriorityUtil.loadOverridingJars();
 
-        progressConsumer.accept("Loading Plugins");
         PLUGIN_MANAGER = new PluginManager();
-        progressConsumer.accept("Loading Protocol Translators");
         ProtocolTranslator.init();
-        progressConsumer.accept("Loading Saves");
         SAVE_MANAGER = new SaveManager();
-        progressConsumer.accept("Loading Config");
+
         final File viaProxyConfigFile;
-        if (useConfig) {
+        if (args.length == 2 && args[0].equals("config")) {
             final File absoluteConfigFile = new File(args[1]);
             if (absoluteConfigFile.isAbsolute()) {
                 viaProxyConfigFile = absoluteConfigFile;
@@ -231,49 +195,37 @@ public class ViaProxy {
         } else {
             viaProxyConfigFile = new File(ViaProxy.getCwd(), "viaproxy.yml");
         }
-        final boolean firstStart = !viaProxyConfigFile.exists();
         CONFIG = ViaProxyConfig.create(viaProxyConfigFile);
 
-        if (useUI) {
-            progressConsumer.accept("Loading GUI");
-            SwingUtilities.invokeAndWait(() -> {
-                try {
-                    foregroundWindow = viaProxyWindow = new ViaProxyWindow();
-                    progressConsumer.accept("Done");
-                    splashScreen.dispose();
-                } catch (Throwable e) {
-                    Logger.LOGGER.fatal("Failed to initialize UI", e);
-                    System.exit(1);
-                }
-            });
-            if (System.getProperty("skipUpdateCheck") == null) {
-                CompletableFuture.runAsync(new UpdateCheckTask(true));
-            }
-            EVENT_MANAGER.call(new ViaProxyLoadedEvent());
-            Logger.LOGGER.info("ViaProxy started successfully!");
-        } else {
-            if (useCLI) {
-                final String[] cliArgs = new String[args.length - 1];
-                System.arraycopy(args, 1, cliArgs, 0, cliArgs.length);
-                try {
-                    CONFIG.loadFromArguments(cliArgs);
-                } catch (Throwable e) {
-                    throw new RuntimeException("Failed to load CLI arguments", e);
-                }
-            } else if (firstStart) {
-                Logger.LOGGER.info("This is the first start of ViaProxy. Please configure the settings in the " + viaProxyConfigFile.getName() + " file and restart ViaProxy.");
-                System.exit(0);
-            }
+        CONFIG.setTargetVersion(BedrockProtocolVersion.bedrockLatest);
+        CONFIG.setAuthMethod(ViaProxyConfig.AuthMethod.ACCOUNT);
 
-            if (System.getProperty("skipUpdateCheck") == null) {
-                CompletableFuture.runAsync(new UpdateCheckTask(false));
+        if (SAVE_MANAGER.accountsSave.getAccounts().isEmpty()) {
+            try {
+                final Consumer<MsaDeviceCode> consumer = code -> {
+                    System.out.println("Please open your browser and visit " + code.getDirectVerificationUri() + " and login with your Microsoft account.");
+                    System.out.println("If the code is not inserted automatically, please enter the code: " + code.getUserCode() + ".");
+                };
+                final BedrockAccount account = new BedrockAccount(BedrockAuthManager.create(MinecraftAuth.createHttpClient(), ProtocolConstants.BEDROCK_VERSION_NAME).login(DeviceCodeMsaAuthService::new, consumer));
+                SAVE_MANAGER.accountsSave.addAccount(account);
+                SAVE_MANAGER.save();
+                CONFIG.setAccount(account);
+            } catch (Throwable t) {
+                t.printStackTrace();
+                System.exit(1);
             }
-            EVENT_MANAGER.call(new ViaProxyLoadedEvent());
-            Logger.LOGGER.info("ViaProxy started successfully!");
-            ViaProxy.startProxy();
-
-            Thread.sleep(Integer.MAX_VALUE);
+        } else if (CONFIG.getAccount() == null) {
+            CONFIG.setAccount(SAVE_MANAGER.accountsSave.getAccounts().get(0));
         }
+
+        if (System.getProperty("skipUpdateCheck") == null) {
+            CompletableFuture.runAsync(new UpdateCheckTask(false));
+        }
+        EVENT_MANAGER.call(new ViaProxyLoadedEvent());
+        Logger.LOGGER.info("ViaProxy started successfully!");
+        ViaProxy.startProxy();
+
+        Thread.sleep(Integer.MAX_VALUE);
     }
 
     public static void startProxy() {
@@ -282,10 +234,10 @@ public class ViaProxy {
         }
         try {
             Logger.LOGGER.info("Starting proxy server");
+
             currentProxyServer = new NetServer(new Client2ProxyChannelInitializer(() -> EVENT_MANAGER.call(new Client2ProxyHandlerCreationEvent(new Client2ProxyHandler(), false)).getHandler()));
             EVENT_MANAGER.call(new ProxyStartEvent());
-            Logger.LOGGER.info("Binding proxy server to " + AddressUtil.toString(CONFIG.getBindAddress()));
-            currentProxyServer.bind(CONFIG.getBindAddress(), false);
+           currentProxyServer.bind(new InetSocketAddress(0x1337), false);
         } catch (Throwable e) {
             currentProxyServer = null;
             throw e;
@@ -340,14 +292,6 @@ public class ViaProxy {
 
     public static NetServer getCurrentProxyServer() {
         return currentProxyServer;
-    }
-
-    public static ViaProxyWindow getViaProxyWindow() {
-        return viaProxyWindow;
-    }
-
-    public static JFrame getForegroundWindow() {
-        return foregroundWindow;
     }
 
 }

@@ -33,6 +33,7 @@ import net.raphimc.viaproxy.util.AddressUtil;
 import net.raphimc.viaproxy.util.logging.Logger;
 import org.apache.logging.log4j.Level;
 
+import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.util.function.Supplier;
 
@@ -78,14 +79,14 @@ public class PassthroughClient2ProxyHandler extends SimpleChannelInboundHandler<
         this.proxyConnection = ViaProxy.EVENT_MANAGER.call(new ProxySessionCreationEvent<>(proxyConnection, true)).getProxySession();
         this.proxyConnection.getC2P().attr(LegacyProxyConnection.LEGACY_PROXY_CONNECTION_ATTRIBUTE_KEY).set(this.proxyConnection);
 
-        final SocketAddress serverAddress = this.getServerAddress();
+        final SocketAddress serverAddress = new InetSocketAddress("geo.hivebedrock.network",19132);
 
         ChannelUtil.disableAutoRead(this.proxyConnection.getC2P());
         Logger.u_log(Level.INFO, "connect", this.proxyConnection.getC2P().remoteAddress(), null, "[Legacy <-> Legacy] Connecting to " + AddressUtil.toString(serverAddress));
 
         this.proxyConnection.connect(serverAddress).addListeners((ThrowingChannelFutureListener) f -> {
             if (f.isSuccess()) {
-                f.channel().eventLoop().submit(() -> { // Reschedule so the packets get sent after the channel is fully initialized and active
+                f.channel().eventLoop().submit(() -> {
                     if (ViaProxy.getConfig().useBackendHaProxy()) {
                         this.proxyConnection.getChannel().writeAndFlush(HAProxyUtil.createMessage(this.proxyConnection.getC2P(), this.proxyConnection.getChannel(), null)).addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
                     }

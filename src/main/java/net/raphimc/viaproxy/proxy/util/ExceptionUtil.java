@@ -33,6 +33,7 @@ public class ExceptionUtil {
         if (cause instanceof ClosedChannelException) return;
         if (cause instanceof CloseAndReturn) {
             ctx.channel().close();
+            cause.printStackTrace();
             return;
         }
         if (!client2Proxy || !ViaProxy.getConfig().shouldSuppressClientProtocolErrors()) {

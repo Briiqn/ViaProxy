@@ -23,9 +23,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.vdurmont.semver4j.Semver;
 import net.raphimc.viaproxy.ViaProxy;
-import net.raphimc.viaproxy.ui.I18n;
-import net.raphimc.viaproxy.ui.ViaProxyWindow;
-import net.raphimc.viaproxy.ui.popups.DownloadPopup;
+
 import net.raphimc.viaproxy.util.JarUtil;
 import net.raphimc.viaproxy.util.logging.Logger;
 
@@ -85,42 +83,17 @@ public class UpdateCheckTask implements Runnable {
                         JsonObject assetObject = asset.getAsJsonObject();
                         if ((this.isMainViaProxyJar(object, assetObject) && !runsJava8) || this.isJava8ViaProxyJar(object, assetObject) && runsJava8) {
                             found = true;
-                            SwingUtilities.invokeLater(() -> this.showUpdateQuestion(assetObject.get("name").getAsString(), assetObject.get("browser_download_url").getAsString(), latestVersion));
                             break;
                         }
                     }
-                    if (!found) SwingUtilities.invokeLater(() -> this.showUpdateWarning(latestVersion));
                 }
             }
         } catch (Throwable ignored) {
         }
     }
 
-    private void showUpdateWarning(final String latestVersion) {
-        JOptionPane.showMessageDialog(ViaProxy.getForegroundWindow(), I18n.get("popup.update.info", VERSION, latestVersion), "ViaProxy", JOptionPane.WARNING_MESSAGE);
-    }
 
-    private void showUpdateQuestion(final String name, final String downloadUrl, final String latestVersion) {
-        int chosen = JOptionPane.showConfirmDialog(ViaProxy.getForegroundWindow(), I18n.get("popup.update.info", VERSION, latestVersion) + "\n\n" + I18n.get("popup.update.question"), "ViaProxy", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
-        if (chosen == JOptionPane.YES_OPTION) {
-            final File f = new File(JarUtil.getJarFile().map(File::getParentFile).orElseThrow(), name);
-            new DownloadPopup(ViaProxy.getForegroundWindow(), downloadUrl, f, () -> SwingUtilities.invokeLater(() -> {
-                JOptionPane.showMessageDialog(ViaProxy.getForegroundWindow(), I18n.get("popup.update.success"), "ViaProxy", JOptionPane.INFORMATION_MESSAGE);
-                try {
-                    JarUtil.launch(f);
-                    System.exit(0);
-                } catch (Throwable e) {
-                    Logger.LOGGER.error("Could not start the new ViaProxy jar", e);
-                    ViaProxyWindow.showException(e);
-                }
-            }), t -> {
-                if (t != null) {
-                    Logger.LOGGER.error("Could not download the latest version of ViaProxy", t);
-                    ViaProxyWindow.showException(t);
-                }
-            });
-        }
-    }
+
 
     private boolean isMainViaProxyJar(final JsonObject root, final JsonObject assetObject) {
         return assetObject.get("name").getAsString().equals(root.get("name").getAsString() + ".jar");
