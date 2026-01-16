@@ -62,7 +62,7 @@ public class ViaProxyConfig {
     @Option(value = "target-address", dependencies = "target-version")
     @Description("The address of the server ViaProxy should connect to.")
     @TypeSerializer(TargetAddressTypeSerializer.class)
-    private SocketAddress targetAddress = AddressUtil.parse("127.0.0.1:25565", null);
+    private SocketAddress targetAddress = AddressUtil.parse("geo.hivebedrock.network:19132", null);
 
     @Option("target-version")
     @Description("The version ViaProxy should translate to. (See ViaProxy GUI for a list of versions)")

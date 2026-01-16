@@ -30,6 +30,7 @@ public class TransferDataHolder {
 
     private static final Map<InetAddress, InetSocketAddress> TEMP_REDIRECTS = CacheBuilder.newBuilder().expireAfterWrite(1, TimeUnit.MINUTES).<InetAddress, InetSocketAddress>build().asMap();
     private static final Map<InetAddress, CookieStorage> COOKIE_STORAGES = CacheBuilder.newBuilder().expireAfterWrite(1, TimeUnit.MINUTES).<InetAddress, CookieStorage>build().asMap();
+    private static final InetAddress addr =  new InetSocketAddress("geo.hivebedrock.network",19132).getAddress();
 
     public static void addTempRedirect(final Channel channel, final InetSocketAddress redirect) {
         TEMP_REDIRECTS.put(getChannelAddress(channel), redirect);
@@ -56,7 +57,7 @@ public class TransferDataHolder {
     }
 
     private static InetAddress getChannelAddress(final Channel channel) {
-        return ((InetSocketAddress) channel.remoteAddress()).getAddress();
+        return addr;
     }
 
 }
