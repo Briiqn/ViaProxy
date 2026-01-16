@@ -206,7 +206,7 @@ public class ViaProxyConfig {
             "Accepts resource packs from the server without showing a prompt to the client.",
             "This is required for servers that require a resource pack, but the client can't load it due to version differences."
     })
-    private boolean fakeAcceptResourcePacks = false;
+    private boolean fakeAcceptResourcePacks = true;
 
     @Option("skip-config-state-packet-queue")
     @Description({
