@@ -37,7 +37,9 @@ import net.lenni0451.reflect.JavaBypass;
 import net.lenni0451.reflect.Methods;
 import net.raphimc.minecraftauth.MinecraftAuth;
 import net.raphimc.minecraftauth.bedrock.BedrockAuthManager;
+import net.raphimc.minecraftauth.msa.model.MsaCredentials;
 import net.raphimc.minecraftauth.msa.model.MsaDeviceCode;
+import net.raphimc.minecraftauth.msa.service.impl.CredentialsMsaAuthService;
 import net.raphimc.minecraftauth.msa.service.impl.DeviceCodeMsaAuthService;
 import net.raphimc.netminecraft.constants.MCPipeline;
 import net.raphimc.netminecraft.netty.connection.NetServer;
@@ -200,22 +202,46 @@ public class ViaProxy {
         CONFIG.setTargetVersion(BedrockProtocolVersion.bedrockLatest);
         CONFIG.setAuthMethod(ViaProxyConfig.AuthMethod.ACCOUNT);
 
-        if (SAVE_MANAGER.accountsSave.getAccounts().isEmpty()) {
-            try {
-                final Consumer<MsaDeviceCode> consumer = code -> {
-                    System.out.println("Please open your browser and visit " + code.getDirectVerificationUri() + " and login with your Microsoft account.");
-                    System.out.println("If the code is not inserted automatically, please enter the code: " + code.getUserCode() + ".");
-                };
-                final BedrockAccount account = new BedrockAccount(BedrockAuthManager.create(MinecraftAuth.createHttpClient(), ProtocolConstants.BEDROCK_VERSION_NAME).login(DeviceCodeMsaAuthService::new, consumer));
-                SAVE_MANAGER.accountsSave.addAccount(account);
-                SAVE_MANAGER.save();
-                CONFIG.setAccount(account);
-            } catch (Throwable t) {
-                t.printStackTrace();
-                System.exit(1);
-            }
-        } else if (CONFIG.getAccount() == null) {
-            CONFIG.setAccount(SAVE_MANAGER.accountsSave.getAccounts().get(0));
+        final File accountsFile = new File(ViaProxy.getCwd(), "accounts.txt");
+        if (accountsFile.exists()) {
+            new Thread(() -> {
+                Logger.LOGGER.info("Loading accounts from background thread...");
+                try {
+                    final List<String> lines = Files.readAllLines(accountsFile.toPath());
+                    int loaded = 0;
+                    for (String line : lines) {
+                        final String[] parts = line.split(":", 2);
+                        if (parts.length == 2) {
+                            final String email = parts[0].trim();
+                            final String password = parts[1].trim();
+
+                            try {
+                                Logger.LOGGER.info("Authenticating " + email + "...");
+                                final BedrockAuthManager authManager = BedrockAuthManager.create(MinecraftAuth.createHttpClient(), ProtocolConstants.BEDROCK_VERSION_NAME)
+                                        .login(CredentialsMsaAuthService::new, new MsaCredentials(email, password));
+
+                                final BedrockAccount account = new BedrockAccount(authManager);
+
+                                SAVE_MANAGER.accountsSave.addAccount(account);
+                                Logger.LOGGER.info("Successfully loaded account: " + account.getName());
+                                loaded++;
+                            } catch (Throwable t) {
+                                Logger.LOGGER.error("Failed to authenticate account: " + email, t);
+                            }
+                        }
+                    }
+
+                    if (loaded > 0) {
+                        SAVE_MANAGER.save();
+                        Logger.LOGGER.info("Loaded " + loaded + " accounts from accounts.txt");
+                        Files.move(accountsFile.toPath(), new File(ViaProxy.getCwd(), "accounts.txt.loaded").toPath());
+                    } else {
+                        Logger.LOGGER.warn("No valid accounts processed from accounts.txt");
+                    }
+                } catch (IOException e) {
+                    Logger.LOGGER.error("Failed to read accounts.txt", e);
+                }
+            }, "Account Loader").start();
         }
 
         if (System.getProperty("skipUpdateCheck") == null) {
@@ -237,7 +263,7 @@ public class ViaProxy {
 
             currentProxyServer = new NetServer(new Client2ProxyChannelInitializer(() -> EVENT_MANAGER.call(new Client2ProxyHandlerCreationEvent(new Client2ProxyHandler(), false)).getHandler()));
             EVENT_MANAGER.call(new ProxyStartEvent());
-           currentProxyServer.bind(new InetSocketAddress(0x1337), false);
+            currentProxyServer.bind(new InetSocketAddress(0x1337), false);
         } catch (Throwable e) {
             currentProxyServer = null;
             throw e;
