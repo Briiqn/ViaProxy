@@ -616,6 +616,7 @@ public class ViaProxyConfig {
     }
 
     public enum AuthMethod {
+        ACCOUNT_POOL("tab.general.minecraft_account.option_pool"),
 
         /**
          * Use an account for joining the target server (Has to be configured in ViaProxy GUI)

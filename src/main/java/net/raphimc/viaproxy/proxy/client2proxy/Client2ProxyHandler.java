@@ -49,6 +49,7 @@ import net.raphimc.viaproxy.proxy.session.DummyProxyConnection;
 import net.raphimc.viaproxy.proxy.session.ProxyConnection;
 import net.raphimc.viaproxy.proxy.session.UserOptions;
 import net.raphimc.viaproxy.proxy.util.*;
+import net.raphimc.viaproxy.saves.impl.accounts.Account;
 import net.raphimc.viaproxy.saves.impl.accounts.ClassicAccount;
 import net.raphimc.viaproxy.util.*;
 import net.raphimc.viaproxy.util.logging.Logger;
@@ -78,6 +79,12 @@ public class Client2ProxyHandler extends SimpleChannelInboundHandler<Packet> {
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
         super.channelInactive(ctx);
         if (this.proxyConnection instanceof DummyProxyConnection) return;
+
+        if (this.proxyConnection != null && this.proxyConnection.getUserOptions() != null) {
+            if (ViaProxy.getConfig().getAuthMethod() == ViaProxyConfig.AuthMethod.ACCOUNT_POOL) {
+                AccountPool.release(this.proxyConnection.getUserOptions().account());
+            }
+        }
 
         try {
             this.proxyConnection.getChannel().close();
@@ -111,6 +118,7 @@ public class Client2ProxyHandler extends SimpleChannelInboundHandler<Packet> {
 
     private void handleHandshake(final C2SHandshakingClientIntentionPacket packet) {
         final ProtocolVersion clientVersion = ProtocolVersion.getProtocol(packet.protocolVersion);
+        Account account = ViaProxy.getConfig().getAccount();
 
         if (packet.intendedState == null) {
             throw CloseAndReturn.INSTANCE;
@@ -119,6 +127,13 @@ public class Client2ProxyHandler extends SimpleChannelInboundHandler<Packet> {
         this.proxyConnection.setClientVersion(clientVersion);
         this.proxyConnection.setC2pConnectionState(packet.intendedState.getConnectionState());
 
+        if (ViaProxy.getConfig().getAuthMethod() == ViaProxyConfig.AuthMethod.ACCOUNT_POOL) {
+            account = AccountPool.acquire();
+            if (account == null) {
+                this.proxyConnection.kickClient("§cNo available accounts in the pool!");
+                return;
+            }
+        }
         if (!ProtocolVersion.isRegistered(clientVersion.getVersionType(), clientVersion.getOriginalVersion())) {
             this.proxyConnection.kickClient("§cYour client version is not supported by ViaProxy!");
         }
@@ -200,7 +215,7 @@ public class Client2ProxyHandler extends SimpleChannelInboundHandler<Packet> {
             this.proxyConnection.kickClient("§7ViaProxy is working!\n§7Connect to join the configured server");
         }
 
-        final UserOptions userOptions = new UserOptions(classicMpPass, ViaProxy.getConfig().getAccount());
+        final UserOptions userOptions = new UserOptions(classicMpPass, account);
         ChannelUtil.disableAutoRead(this.proxyConnection.getC2P());
 
         if (packet.intendedState.getConnectionState() == ConnectionState.LOGIN && serverVersion.equals(ProtocolTranslator.AUTO_DETECT_PROTOCOL)) {
