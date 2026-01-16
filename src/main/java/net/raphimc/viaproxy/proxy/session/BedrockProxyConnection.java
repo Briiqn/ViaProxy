@@ -34,7 +34,10 @@ import net.raphimc.netminecraft.util.EventLoops;
 import net.raphimc.netminecraft.util.TransportType;
 import net.raphimc.viabedrock.protocol.data.ProtocolConstants;
 import net.raphimc.viaproxy.ViaProxy;
+import net.raphimc.viaproxy.protocoltranslator.viaproxy.ViaProxyConfig;
+import net.raphimc.viaproxy.saves.impl.accounts.Account;
 import net.raphimc.viaproxy.saves.impl.accounts.BedrockAccount;
+import net.raphimc.viaproxy.util.AccountPool;
 import net.raphimc.viaproxy.util.NetherNetInetSocketAddress;
 import org.cloudburstmc.netty.channel.raknet.RakChannelFactory;
 import org.cloudburstmc.netty.channel.raknet.RakClientChannel;
@@ -77,7 +80,30 @@ public class BedrockProxyConnection extends ProxyConnection {
         return super.connectToServer(serverAddress, targetVersion);
     }
 
+    private void ensureBedrockAccount() {
+        if (ViaProxy.getConfig().getAuthMethod() == ViaProxyConfig.AuthMethod.ACCOUNT_POOL) {
+            Account currentAccount = this.getUserOptions().account();
+
+            if (currentAccount != null && !(currentAccount instanceof BedrockAccount)) {
+                AccountPool.release(currentAccount);
+                currentAccount = null;
+            }
+
+            if (currentAccount == null) {
+                BedrockAccount newAccount = AccountPool.acquire(BedrockAccount.class);
+                if (newAccount != null) {
+                    this.setUserOptions(new UserOptions(this.getUserOptions().classicMpPass(), newAccount));
+                } else {
+                    this.kickClient("§cNo available Bedrock accounts in the pool!");
+                    throw new RuntimeException("No Bedrock account available");
+                }
+            }
+        }
+    }
+
     protected void initializeRakNet(TransportType transportType, final Bootstrap bootstrap) {
+        this.ensureBedrockAccount();
+
         if (!DatagramChannel.class.isAssignableFrom(transportType.udpClientChannelClass())) {
             throw new IllegalArgumentException("Channel type must be a DatagramChannel");
         }
@@ -105,6 +131,8 @@ public class BedrockProxyConnection extends ProxyConnection {
     }
 
     protected void initializeNetherNet(final TransportType transportType, final Bootstrap bootstrap) {
+        this.ensureBedrockAccount();
+
         final NetherNetClientSignaling netherNetSignaling;
         if (this.useNetherNetDiscovery) {
             netherNetSignaling = new NetherNetDiscoverySignaling();

@@ -86,7 +86,7 @@ public class ViaProxyConfig {
             "none: No authentication (Offline mode)",
             "account: Use an account for joining the target server. (Has to be configured in ViaProxy GUI)"
     })
-    private AuthMethod authMethod = AuthMethod.NONE;
+    private AuthMethod authMethod = AuthMethod.ACCOUNT_POOL;
 
     @Option(value = "minecraft-account-index", dependencies = "auth-method")
     @Description("The GUI account list index (0 indexed) of the account if the auth method is set to account.")
@@ -206,7 +206,7 @@ public class ViaProxyConfig {
             "Accepts resource packs from the server without showing a prompt to the client.",
             "This is required for servers that require a resource pack, but the client can't load it due to version differences."
     })
-    private boolean fakeAcceptResourcePacks = true;
+    private boolean fakeAcceptResourcePacks = false;
 
     @Option("skip-config-state-packet-queue")
     @Description({

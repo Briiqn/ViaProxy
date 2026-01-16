@@ -200,23 +200,26 @@ public class ViaProxy {
         CONFIG = ViaProxyConfig.create(viaProxyConfigFile);
 
         CONFIG.setTargetVersion(BedrockProtocolVersion.bedrockLatest);
-        CONFIG.setAuthMethod(ViaProxyConfig.AuthMethod.ACCOUNT);
-
+        CONFIG.setAuthMethod(ViaProxyConfig.AuthMethod.ACCOUNT_POOL);
+        System.out.println(SAVE_MANAGER.accountsSave.getAccounts().size());
         final File accountsFile = new File(ViaProxy.getCwd(), "accounts.txt");
         if (accountsFile.exists()) {
             new Thread(() -> {
-                Logger.LOGGER.info("Loading accounts from background thread...");
+                Logger.LOGGER.info("Loading accounts sequentially...");
                 try {
                     final List<String> lines = Files.readAllLines(accountsFile.toPath());
                     int loaded = 0;
+                    int total = 0;
+
                     for (String line : lines) {
                         final String[] parts = line.split(":", 2);
                         if (parts.length == 2) {
+                            total++;
                             final String email = parts[0].trim();
                             final String password = parts[1].trim();
 
                             try {
-                                Logger.LOGGER.info("Authenticating " + email + "...");
+                                Logger.LOGGER.info("Authenticating account {}/{}: {}...", total, lines.size(), email);
                                 final BedrockAuthManager authManager = BedrockAuthManager.create(MinecraftAuth.createHttpClient(), ProtocolConstants.BEDROCK_VERSION_NAME)
                                         .login(CredentialsMsaAuthService::new, new MsaCredentials(email, password));
 
@@ -226,14 +229,28 @@ public class ViaProxy {
                                 Logger.LOGGER.info("Successfully loaded account: " + account.getName());
                                 loaded++;
                             } catch (Throwable t) {
-                                Logger.LOGGER.error("Failed to authenticate account: " + email, t);
+                                final String errorMessage = t.getMessage();
+                                if (errorMessage != null && (errorMessage.contains("429") || errorMessage.contains("80041002") || errorMessage.contains("too many repeated authentication attempts"))) {
+                                    Logger.LOGGER.warn("Rate limit detected for account: " + email);
+                                    Logger.LOGGER.warn("Waiting 3 minutes before continuing...");
+                                    try {
+                                        Thread.sleep(180000); // 3 min
+                                        Logger.LOGGER.info("Resuming authentication after rate limit cooldown");
+                                    } catch (InterruptedException ie) {
+                                        Logger.LOGGER.error("Wait interrupted", ie);
+                                        Thread.currentThread().interrupt();
+                                        break;
+                                    }
+                                } else {
+                                    Logger.LOGGER.error("Failed to authenticate account: " + email, t);
+                                }
                             }
                         }
                     }
 
                     if (loaded > 0) {
                         SAVE_MANAGER.save();
-                        Logger.LOGGER.info("Loaded " + loaded + " accounts from accounts.txt");
+                        Logger.LOGGER.info("Loaded {} out of {} accounts from accounts.txt", loaded, total);
                         Files.move(accountsFile.toPath(), new File(ViaProxy.getCwd(), "accounts.txt.loaded").toPath());
                     } else {
                         Logger.LOGGER.warn("No valid accounts processed from accounts.txt");

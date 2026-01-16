@@ -80,11 +80,7 @@ public class Client2ProxyHandler extends SimpleChannelInboundHandler<Packet> {
         super.channelInactive(ctx);
         if (this.proxyConnection instanceof DummyProxyConnection) return;
 
-        if (this.proxyConnection != null && this.proxyConnection.getUserOptions() != null) {
-            if (ViaProxy.getConfig().getAuthMethod() == ViaProxyConfig.AuthMethod.ACCOUNT_POOL) {
-                AccountPool.release(this.proxyConnection.getUserOptions().account());
-            }
-        }
+
 
         try {
             this.proxyConnection.getChannel().close();
@@ -127,13 +123,6 @@ public class Client2ProxyHandler extends SimpleChannelInboundHandler<Packet> {
         this.proxyConnection.setClientVersion(clientVersion);
         this.proxyConnection.setC2pConnectionState(packet.intendedState.getConnectionState());
 
-        if (ViaProxy.getConfig().getAuthMethod() == ViaProxyConfig.AuthMethod.ACCOUNT_POOL) {
-            account = AccountPool.acquire();
-            if (account == null) {
-                this.proxyConnection.kickClient("§cNo available accounts in the pool!");
-                return;
-            }
-        }
         if (!ProtocolVersion.isRegistered(clientVersion.getVersionType(), clientVersion.getOriginalVersion())) {
             this.proxyConnection.kickClient("§cYour client version is not supported by ViaProxy!");
         }

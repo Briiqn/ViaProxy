@@ -19,7 +19,9 @@ package net.raphimc.viaproxy.util;
 
 import net.raphimc.viaproxy.ViaProxy;
 import net.raphimc.viaproxy.saves.impl.accounts.Account;
+import net.raphimc.viaproxy.saves.impl.accounts.BedrockAccount;
 import net.raphimc.viaproxy.saves.impl.accounts.MicrosoftAccount;
+import net.raphimc.viaproxy.util.logging.Logger;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -30,11 +32,18 @@ public class AccountPool {
     private static final Set<UUID> activeAccounts = new HashSet<>();
 
     public static synchronized Account acquire() {
+        return acquire(Account.class);
+    }
+
+    public static synchronized <T extends Account> T acquire(Class<T> type) {
         for (Account account : ViaProxy.getSaveManager().accountsSave.getAccounts()) {
-            if (account instanceof MicrosoftAccount) {
-                if (!activeAccounts.contains(account.getUUID())) {
-                    activeAccounts.add(account.getUUID());
-                    return account;
+            if (type.isInstance(account)) {
+                if (account instanceof MicrosoftAccount || account instanceof BedrockAccount) {
+                    if (!activeAccounts.contains(account.getUUID())) {
+                        activeAccounts.add(account.getUUID());
+                        Logger.LOGGER.info("Acquired account from pool: " + account.getName() + " (" + type.getSimpleName() + ")");
+                        return type.cast(account);
+                    }
                 }
             }
         }
@@ -43,7 +52,9 @@ public class AccountPool {
 
     public static synchronized void release(Account account) {
         if (account != null) {
-            activeAccounts.remove(account.getUUID());
+            if (activeAccounts.remove(account.getUUID())) {
+                Logger.LOGGER.info("Released account to pool: " + account.getName());
+            }
         }
     }
 }
